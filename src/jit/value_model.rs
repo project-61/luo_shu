@@ -4,6 +4,13 @@ use crate::ast::Constant;
 
 
 
+pub type GcHandle<T> = * const T;
+
+pub fn get_ptr<T>(i: GcHandle<T>) -> *const T {
+    let i = (i as u64) << 62 >> 62;
+    i as *const T
+}
+
 pub struct ValueFatPointer {
     pub value: RawValue,
     pub type_: MetaData,
@@ -59,24 +66,28 @@ impl Debug for ValueFatPointer {
 /// -------------------------
 /// | type |    metainfo    |
 /// -------------------------
+/// |  3   |       61       |
+/// if tag > 5, then it is a pointer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MetaData(* const MetaDataInfo);
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MetaDataInfo {
-    pub tag: u8,
-    pub ptr: * const (),
+    pub tag: MetaDataInfoTag,
+    pub ptr: GcHandle<()>,
 }
 
+/// # MetaDataInfoTag
 /// 2 bits for type
 ///         2bit tag
 /// ----------------
 /// |       | type |
 /// ----------------
+/// |   6   |   2  |
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MetaDataTag {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MetaDataInfoTag {
     OneTypeVector = 0b000,
     ManyTypeVector = 0b001,
     Map = 0b010,
@@ -88,8 +99,9 @@ pub enum MetaDataTag {
 /// ----------------
 /// |       | type |
 /// ----------------
+/// |   5   |   3  |
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
     None = 0,
     Bool = 1,
@@ -135,10 +147,12 @@ pub union RawValue {
     pub int: i64,
     pub uint: u64,
     pub float: f64,
-    pub str: * const CStr,
-    pub vec: * const Vector,
-    pub map: * const Vector,
+    pub str: GcHandle<CStr>,
+    pub vec: GcHandle<Vector>,
+    pub map: GcHandle<Vector>,
 }
+
+
 
 impl From<&Constant> for RawValue {
     fn from(i: &Constant) -> Self {
@@ -153,4 +167,4 @@ impl From<&Constant> for RawValue {
     }
 }
 
-pub type Vector = * mut RawValue;
+pub type Vector = [RawValue];
