@@ -1,4 +1,7 @@
 # luo_shu
+
+洛书(LuoShu) 逻辑求解器
+
 The 洛书(LuoShu) Logic Solver.
 
 ## Numbering
