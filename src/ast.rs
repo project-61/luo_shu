@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::types::Type;
+
 
 pub type Handle<T> = Arc<T>;
 
@@ -12,6 +14,7 @@ impl Symbol {
     pub fn new(s: &str) -> Self {
         Symbol(Arc::new(s.to_string()))
     }
+
     pub fn register() {
 
     }
@@ -20,44 +23,47 @@ impl Symbol {
 pub type StrProc = Symbol;
 
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Fact {
     pub name: Symbol,
     pub values: Vec<Constant>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatchProcedure {
     pub name: Symbol,
     pub args: Vec<Pattern>,
     pub body: Vec<MatchExpr>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Query {
     pub defs: Vec<Symbol>,
     pub body: Vec<MatchExpr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
     Wildcard, // _
     Variable(Symbol),
     Expr(Expr),
+    TypeAssert(Type),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatchExpr {
     pub name: Symbol,
     pub expr: Vec<Expr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: Symbol,
     pub args: Vec<Pattern>,
     pub body: Vec<Expr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Const(Box<Constant>),
     Symbol(Symbol),
@@ -78,8 +84,7 @@ pub enum Expr {
     Call(Vec<Expr>),
 }
 
-#[derive(Debug, Clone)]
-
+#[derive(Debug, Clone, PartialEq)]
 pub enum Constant {
     None,
     Bool(bool),

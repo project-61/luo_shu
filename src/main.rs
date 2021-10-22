@@ -1,4 +1,5 @@
 mod ast;
+mod types;
 mod frontend;
 mod interpreter;
 mod jit;
