@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::RwLock};
+use rayon::prelude::*;
 
-use crate::{ast::{Constant, Expr, Handle, MatchExpr, Pattern, Symbol}, types::Type};
+use crate::{ast::{self, Constant, Expr, Handle, InferEnv, MatchExpr, Pattern, Symbol}, types::Type};
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -12,7 +13,7 @@ pub struct TypeKey(pub Vec<Option<Type>>);
 pub type Lines<T> = Handle<RwLock<Vec<T>>>;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 
 pub struct Table<T> (pub Handle<RwLock<HashMap<
     Key,
@@ -40,6 +41,11 @@ pub type RuleDB = Table<Lines<Rule>>;
 
 pub type FnDB = Table<Fun>;
 
+impl Default for Table<Fun> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Fact(pub Vec<Constant>);
@@ -64,9 +70,45 @@ pub struct UserFn {
 
 pub type NativeFn = extern "C" fn(Vec<Constant>) -> Constant;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Database {
     pub facts: FactDB,
     pub rules: RuleDB,
     pub funs: FnDB,
+}
+
+impl Database {
+    pub fn load_fact(&self, fact: ast::Fact) {
+        let key = Key(fact.name.clone(), fact.values.len());
+        let types = TypeKey(fact.values.par_iter().map(|x| Some(x.infer_type())).collect());
+        let v = Fact(fact.values);
+        if let Some(l) = self.facts.get_line(&key, &types) {
+            l.write().unwrap().push(v);
+        } else {
+            let v = Handle::new(RwLock::new(vec![v]));
+            let mut hm = HashMap::new();
+            hm.insert(types, v);
+            let hm = Handle::new(RwLock::new(hm));
+            self.facts.0.write().unwrap().insert(key,hm);
+        }
+    }
+    pub fn load_rule(&self, mp: ast::MatchProcedure) {
+        let key = Key(mp.name.clone(), mp.args.len());
+        let env: InferEnv = Default::default();
+        let types = TypeKey(mp.args.par_iter().map(|x| x.infer_type(env.clone())).collect());
+        
+        let v = Rule {
+            args: mp.args,
+            body: mp.body,
+        };
+        if let Some(l) = self.rules.get_line(&key, &types) {
+            l.write().unwrap().push(v);
+        } else {
+            let v = Handle::new(RwLock::new(vec![v]));
+            let mut hm = HashMap::new();
+            hm.insert(types, v);
+            let hm = Handle::new(RwLock::new(hm));
+            self.rules.0.write().unwrap().insert(key,hm);
+        }
+    }
 }
