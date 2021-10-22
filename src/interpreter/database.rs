@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::RwLock};
 use rayon::prelude::*;
 
-use crate::{ast::{self, Constant, Expr, Handle, InferEnv, MatchExpr, Pattern, Symbol}, types::Type};
+use crate::{ast::{self, Constant, Expr, Handle, InferEnv, MatchExpr, Pattern, Query, Symbol}, types::Type};
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -96,7 +96,6 @@ impl Database {
         let key = Key(mp.name.clone(), mp.args.len());
         let env: InferEnv = Default::default();
         let types = TypeKey(mp.args.par_iter().map(|x| x.infer_type(env.clone())).collect());
-        
         let v = Rule {
             args: mp.args,
             body: mp.body,
@@ -110,5 +109,43 @@ impl Database {
             let hm = Handle::new(RwLock::new(hm));
             self.rules.0.write().unwrap().insert(key,hm);
         }
+    }
+    pub fn load_fn(&self, mp: ast::Function) {
+        let key = Key(mp.name.clone(), mp.args.len());
+        let env: InferEnv = Default::default();
+        let types = TypeKey(mp.args.par_iter().map(|x| x.infer_type(env.clone())).collect());
+        // let types = TypeKey(mp.args.par_iter().map(|x| x.infer_type(env.clone())).collect());
+        let v = UserFn {
+            args: mp.args,
+            body: mp.body,
+        };
+        let v = Fun::User(v);
+        if let Some(_l) = self.funs.get_line(&key, &types) {
+            // log
+            panic!("Function already defined");
+        } else {
+            let mut hm = HashMap::new();
+            hm.insert(types, v);
+            let hm = Handle::new(RwLock::new(hm));
+            self.funs.0.write().unwrap().insert(key,hm);
+        }
+    }
+    pub fn load_native_fn(&self, key: Key, types: TypeKey, v: NativeFn) {
+        let v = Fun::Native(v);
+        if let Some(_l) = self.funs.get_line(&key, &types) {
+            // log
+            panic!("Function already defined");
+        } else {
+            let mut hm = HashMap::new();
+            hm.insert(types, v);
+            let hm = Handle::new(RwLock::new(hm));
+            self.funs.0.write().unwrap().insert(key,hm);
+        }
+    }
+    pub fn query(&self, query: Query) -> HashMap<Symbol, Constant> {
+        // let mut env = InferEnv::new();
+        // let namespace = Default::default();
+
+        todo!()
     }
 }
