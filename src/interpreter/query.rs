@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::RwLock};
 
 use rayon::prelude::*;
 
-use crate::ast::{Constant, Handle, Match, Symbol, Atom, Rule, NotMatch};
+use crate::ast::{Constant, Handle, Match, Symbol, Atom, NotMatch};
 
 use super::database::*;
 
@@ -17,7 +17,7 @@ impl Atom {
         match self {
             Atom::Variable(name) => {
                 env.par_iter().find_first(|(n, _)| n == name)
-                    .map(|(_, c)| Atom::Const(c.clone()))
+                    .map(|(_, c)| Atom::Const(*c))
                     .unwrap_or_else(|| self.clone())
             }
             _ => self.clone(),
@@ -26,7 +26,7 @@ impl Atom {
 
     pub fn unify_const(&self, value: &Constant) -> Result<Option<(Symbol, Constant)>, ()> {
         match (self, value) {
-            (Atom::Variable(name), value) => Ok(Some((name.clone(), value.clone()))),
+            (Atom::Variable(name), value) => Ok(Some((name.clone(), *value))),
             (Atom::Const(c1), c2) => {
                 if c1 == c2 {
                     Ok(None)
@@ -59,11 +59,11 @@ impl Atom {
 
     pub fn get_var(&self, params: &Atom) -> Result<Option<(Symbol, Atom)>, ()> {
         match (self, params) {
-            (Atom::Variable(v), Atom::Const(c)) =>
+            (Atom::Variable(v), Atom::Const(_c)) =>
                 Ok(Some((v.clone(), params.clone()))),
-            (Atom::Variable(v), Atom::Variable(c)) =>
+            (Atom::Variable(v), Atom::Variable(_c)) =>
                 Ok(Some((v.clone(), params.clone()))),
-            (Atom::Variable(v), Atom::Wildcard) =>
+            (Atom::Variable(_v), Atom::Wildcard) =>
                 Err(()),
             _ => Ok(None),
         }
@@ -71,13 +71,13 @@ impl Atom {
 
     pub fn get_vars(this: &[Self], params: &[Self]) ->
         Result<Vec<(Symbol, Atom)>, ()> {
-            let mut env = Vec::new();
+            let mut env: Vec<(Symbol, Atom)> = Vec::new();
             for (atom, param) in this.iter().zip(params.iter()) {
                 let res = atom.get_var(param)?;
                 if let Some((name, value)) = res {
                     if let Some(x) = env.par_iter()
                     .find_first(|(k, _)| k == &name)
-                    .map(|(_, v)| *v) {
+                    .map(|(_, v)| v.clone()) {
                         if x != value {
                             return Err(());
                         }
@@ -93,7 +93,7 @@ impl Atom {
         Result<Option<(Symbol, Constant)>, ()> {
         match (self, argument) {
             (Atom::Variable(v), Atom::Const(c)) =>
-                Ok(Some((v.clone(), c.clone()))),
+                Ok(Some((v.clone(), *c))),
             (Atom::Const(_), Atom::Variable(_)) |
             (Atom::Variable(_), Atom::Variable(_)) =>
                 Ok(None),
@@ -140,7 +140,7 @@ impl Database {
     }
 
     pub fn not_query(&self, query: &NotMatch, env: &TempFact) -> bool {
-        self.query_facts(&query.0, env).is_empty()
+        self.query(&query.0, env).is_empty()
     }
 
     pub fn query_facts(&self, query: &Match, env: &TempFact) -> HashSet<TempFact> {
@@ -173,14 +173,14 @@ impl Database {
         }
         let rule_list = rule_list.unwrap();
         let rule_list = rule_list.read().unwrap();
-        let match_table: Vec<Atom> = query.expr.par_iter().map(|x| x.eval(&env)).collect();
+        let match_table: Vec<Atom> = query.expr.par_iter().map(|x| x.eval(env)).collect();
         let r: HashSet<TempFact> = rule_list.par_iter().flat_map(|r| {
-            let mut env = Atom::unify_arguments(&match_table, &r.args).unwrap(); // todo
+            let env = Atom::unify_arguments(&match_table, &r.args).unwrap(); // todo
             let res: Vec<_> = r.matchs.par_iter()
                 .fold(
-                    || [env].into_par_iter().collect::<HashSet<_>>(),
+                    || [env.clone()].into_par_iter().collect::<HashSet<_>>(),
                     |env, m| env.par_iter()
-                        .flat_map(|env| self.query(m, &env))
+                        .flat_map(|env| self.query(m, env))
                         .collect())
                 .flatten()
                 .filter(|env| r.not_matchs

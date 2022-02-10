@@ -1,5 +1,5 @@
-use ast::{FactDef, Symbol, Constant, GlobalStr, Match, Atom};
-use interpreter::database::{Database, Fact};
+use ast::{FactDef, Symbol, Constant, Match, Atom};
+use interpreter::database::Database;
 
 mod ast;
 mod frontend;
@@ -23,5 +23,5 @@ fn test_query_fact() {
         expr: vec![Atom::Variable(Symbol::new("a")), Atom::Variable(Symbol::new("b"))],
     };
     let empty_env = Vec::new();
-    println!("{:?}", db.query_facts(query, &empty_env));
+    println!("{:?}", db.query_facts(&query, &empty_env));
 }
