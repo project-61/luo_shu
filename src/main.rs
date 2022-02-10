@@ -12,10 +12,10 @@ fn main() {
 
 fn test_query_fact() {
     let db = Database::new();
-    for _ in 1..11451419u64 {
+    for i in 1..11u64 {
         db.load_fact(FactDef {
             name: Symbol::new("test1"),
-            values: vec![Constant::from(1u64), Constant::from(1u64)],
+            values: vec![Constant::from(i), Constant::from(i+1)],
         });
     }
     let query = Match {
