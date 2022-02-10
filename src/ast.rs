@@ -1,6 +1,4 @@
-use std::{collections::HashMap, io::Read, slice::SliceIndex, sync::{Arc, RwLock}};
-
-use crate::types::Type;
+use std::{sync::Arc, fmt::{Display, Debug}};
 
 
 pub type Handle<T> = Arc<T>;
@@ -8,157 +6,260 @@ pub type Handle<T> = Arc<T>;
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Symbol (pub Handle<String>);
+pub struct Symbol (pub GlobalStr);
 
 impl Symbol {
     pub fn new(s: &str) -> Self {
-        Symbol(Arc::new(s.to_string()))
-    }
-
-    pub fn register() {
-
+        Symbol(GlobalStr::new(s))
     }
 }
 
-pub type StrProc = Symbol;
-
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fact {
+pub struct FactDef {
     pub name: Symbol,
     pub values: Vec<Constant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MatchProcedure {
+pub struct Rule {
     pub name: Symbol,
-    pub args: Vec<Pattern>,
-    pub body: Vec<MatchExpr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Query {
-    pub defs: Vec<Symbol>,
-    pub body: Vec<MatchExpr>,
+    pub args: Vec<Atom>,
+    pub matchs: Vec<Match>,
+    pub not_matchs: Vec<NotMatch>,
+    pub filter: Vec<Filter>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
-    Wildcard, // _
     Variable(Symbol),
-    Expr(Handle<Expr>),
-    TypeAssert(Handle<Pattern>, Type),
+    // Wildcard, // _
+    // Const(Constant),
+    // TypeAssert(Handle<Pattern>, Type),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MatchExpr {
+pub struct Match {
     pub name: Symbol,
-    pub expr: Vec<Expr>,
+    pub expr: Vec<Atom>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Function {
-    pub name: Symbol,
-    pub args: Vec<Pattern>,
-    pub body: Vec<Expr>,
+pub struct NotMatch (pub Match);
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Filter {
+    Eq(Atom, Atom),
+    NotEq(Atom, Atom),
+    Lt(Atom, Atom),
+    Gt(Atom, Atom),
+    LtEq(Atom, Atom),
+    GtEq(Atom, Atom),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
-    Const(Box<Constant>),
-    Symbol(Symbol),
-    Add(Vec<Expr>),
-    Sub(Vec<Expr>),
-    Mul(Vec<Expr>),
-    Div(Vec<Expr>),
-    Mod(Vec<Expr>),
-    And(Vec<Expr>),
-    Or(Vec<Expr>),
-    Xor(Vec<Expr>),
-    Not(Box<Expr>),
-    BitAnd(Vec<Expr>),
-    BitOr(Vec<Expr>),
-    BitXor(Vec<Expr>),
-    BitNot(Box<Expr>),
-    StringJoin(Vec<Expr>),
-    Call(Symbol, Vec<Expr>),
+pub enum Atom {
+    Wildcard,
+    Const(Constant),
+    Variable(Symbol),
+    // And(Vec<Expr>),
+    // Or(Vec<Expr>),
+    // Not(Box<Expr>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Constant {
-    None,
-    Bool(bool),
-    Int(i64),
-    Uint(u64),
-    Float(f64),
-    String(StrProc, String),
-    // Bytes(Bytes),
-}
+#[derive(Clone, Copy, Eq)]
+pub struct GlobalStr (pub *const String);
 
-impl Constant {
-    pub fn is_none(&self) -> bool {
-        match self {
-            Constant::None => true,
-            _ => false,
-        }
-    }
-    pub fn infer_type(&self) -> Type {
-        match self {
-            Constant::None => Type::None,
-            Constant::Bool(_) => Type::Bool,
-            Constant::Int(_) => Type::Int,
-            Constant::Uint(_) => Type::Uint,
-            Constant::Float(_) => Type::Float,
-            Constant::String(_, _) => Type::Str,
-            // Constant::Bytes(_) => Type::Bytes,
-        }
+impl GlobalStr {
+    pub fn new(i: &str) -> GlobalStr {
+        // todo: use interned string
+        let s = Box::new(i.to_string());
+        let s = Box::leak(s);
+        GlobalStr(s)
     }
 }
 
-pub type InferEnv = Arc<RwLock<HashMap<Symbol, Type>>>;
+impl std::hash::Hash for GlobalStr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        unsafe{ self.0.as_ref() }.unwrap().as_str().hash(state);
+    }
+}
 
-impl Pattern {
-    pub fn infer_type(&self, env: InferEnv) -> Option<Type> {
-        match self {
-            Pattern::Wildcard => None,
-            Pattern::Variable(x) => env.read().unwrap().get(x).cloned(),
-            Pattern::Expr(e) => e.infer_type(env),
-            Pattern::TypeAssert(e, t) =>
-                e.infer_type(env).and_then(|ty| ty.simple_unify(t)),
+impl Debug for GlobalStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref().unwrap().as_str() })
+    }
+}
+
+impl Display for GlobalStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", unsafe { self.0.as_ref().unwrap().as_str() })
+    }
+}
+
+impl PartialEq for GlobalStr {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0 == other.0 {
+            true
+        } else {
+            unsafe {
+                self.0.as_ref() == other.0.as_ref()
+            }
         }
     }
 }
 
+unsafe impl Send for GlobalStr {}
+unsafe impl Sync for GlobalStr {}
 
-impl Expr {
-    pub fn infer_type(&self, env: InferEnv) -> Option<Type> {
-        match self {
-            Expr::Const(c) => Some(c.infer_type()),
-            Expr::Symbol(s) => env.read().unwrap().get(s).cloned(),
-            Expr::Add(e)    |
-            Expr::Sub(e)    |
-            Expr::Mul(e)    |
-            Expr::Div(e)    |
-            Expr::Mod(e)    |
-            Expr::And(e)    |
-            Expr::Or(e)     |
-            Expr::Xor(e)    |
-            Expr::BitAnd(e) |
-            Expr::BitOr(e)  |
-            Expr::BitXor(e) => e.iter()
-                .map(|e| e.infer_type(env.clone()))
-                .reduce(|e1, e2|
-                    e1.and_then(|ty1| e2.and_then(|ty2| {
-                        if ty1.type_assert(&ty2) {
-                            Some(ty1)
-                        } else {
-                            // log
-                            None
-                        }}))).flatten(),
-            Expr::Not(e) |
-            Expr::BitNot(e) => e.infer_type(env),
-            Expr::StringJoin(_e) => Some(Type::Str),
-            Expr::Call(c, es) => todo!(),
+#[derive(Clone, Copy)]
+pub struct Constant {
+    pub value: ConstValue,
+    pub type_: ConstType,
+}
+
+impl From<()> for Constant {
+    fn from(_: ()) -> Self {
+        Constant {
+            value: ConstValue { none: () },
+            type_: ConstType::None,
         }
     }
 }
+
+impl From<bool> for Constant {
+    fn from(v: bool) -> Self {
+        Constant {
+            value: ConstValue { bool: v },
+            type_: ConstType::Bool,
+        }
+    }
+}
+
+impl From<i64> for Constant {
+    fn from(v: i64) -> Self {
+        Constant {
+            value: ConstValue { int: v },
+            type_: ConstType::Int,
+        }
+    }
+}
+
+impl From<u64> for Constant {
+    fn from(v: u64) -> Self {
+        Constant {
+            value: ConstValue { uint: v },
+            type_: ConstType::Uint,
+        }
+    }
+}
+
+impl From<f64> for Constant {
+    fn from(v: f64) -> Self {
+        Constant {
+            value: ConstValue { float: v },
+            type_: ConstType::Float,
+        }
+    }
+}
+
+impl From<GlobalStr> for Constant {
+    fn from(v: GlobalStr) -> Self {
+        Constant {
+            value: ConstValue { string: v },
+            type_: ConstType::String,
+        }
+    }
+}
+
+impl std::fmt::Debug for Constant {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        unsafe {
+            match self.type_ {
+                ConstType::None => write!(f, "None"),
+                ConstType::Bool => write!(f, "{:?}", self.value.bool),
+                ConstType::Int => write!(f, "{:?}", self.value.int),
+                ConstType::Uint => write!(f, "{:?}", self.value.uint),
+                ConstType::Float => write!(f, "{:?}", self.value.float),
+                ConstType::String => write!(f, "{:?}", self.value.string),
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Constant {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        unsafe {
+            match self.type_ {
+                ConstType::None   => write!(f, "None"),
+                ConstType::Bool   => write!(f, "{}", self.value.bool),
+                ConstType::Int    => write!(f, "{}", self.value.int),
+                ConstType::Uint   => write!(f, "{}", self.value.uint),
+                ConstType::Float  => write!(f, "{}", self.value.float),
+                ConstType::String => write!(f, "{}", self.value.string),
+            }
+        }
+    }
+}
+
+impl std::hash::Hash for Constant {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.type_.hash(state);
+        unsafe {
+            match self.type_ {
+                ConstType::None   => {},
+                ConstType::Bool   => self.value.bool.hash(state),
+                ConstType::Int    => self.value.int.hash(state),
+                ConstType::Uint   => self.value.uint.hash(state),
+                ConstType::Float  => (self.value.float as u64).hash(state),
+                ConstType::String => self.value.string.hash(state),
+            }
+        }
+    }
+}
+
+impl PartialEq for Constant {
+    fn eq(&self, other: &Self) -> bool {
+        if self.type_ != other.type_ {
+            return false;
+        }
+        unsafe {
+            match self.type_ {
+                ConstType::None   => true,
+                ConstType::Bool   => self.value.bool   == other.value.bool,
+                ConstType::Int    => self.value.int    == other.value.int,
+                ConstType::Uint   => self.value.uint   == other.value.uint,
+                ConstType::Float  => self.value.float  == other.value.float,
+                ConstType::String => self.value.string == other.value.string,
+            }
+        }
+    }
+}
+
+impl Eq for Constant {
+
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum ConstType {
+    None = 0,
+    Bool = 1,
+    Int = 2,
+    Uint = 3,
+    Float = 4,
+    String = 5,
+}
+
+#[derive(Clone, Copy)]
+pub union ConstValue {
+    pub none: (),
+    pub bool: bool,
+    pub int: i64,
+    pub uint: u64,
+    pub float: f64,
+    pub string: GlobalStr,
+}
+
+unsafe impl Send for Constant {}
+unsafe impl Sync for Constant {}
